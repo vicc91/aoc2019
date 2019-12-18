@@ -1,100 +1,141 @@
-const stdin = [];
-
-function readInstruction(instruction) {
-    const optionCode = instruction % 100;
-    const parameterMode1 = parseInt(instruction / 100) % 10;
-    const parameterMode2 = parseInt(instruction / 1000) % 10;
-    const parameterMode3 = parseInt(instruction / 10000) % 10;
-    return {
-        optionCode,
-        parameterMode1,
-        parameterMode2,
-        parameterMode3
+class Intcode {
+    constructor(program) {
+        this.program = [...program];
+        this.index = 0;
+        this.stdin = [];
+        this.stdout = [];
+        this.lastOpcode = 0;
+    }
+    static opcodesSize = {
+        1: 4,
+        2: 4,
+        3: 2,
+        4: 2,
+        5: 3,
+        6: 3,
+        7: 4,
+        8: 4,
+        99: 0,
     };
-}
-
-function actionOptionCode(code, parameterMode1, parameterMode2, parameterMode3, instructions, index, outputs) {
-    let parameter1, parameter2, parameter3;
-    if (code === 1 || code === 2 || code === 4 || code === 5 || code === 6 || code === 7 || code === 8) {
-        parameter1 = parameterMode1 === 0 ? +instructions[instructions[index+1]] : +instructions[index+1];
-        parameter2 = parameterMode2 === 0 ? +instructions[instructions[index+2]] : +instructions[index+2];
-    } else {
-        parameter1 = +instructions[index+1];
+    static direct = {
+        1: [3],
+        2: [],
+        3: [1,2,7,8],
     }
-    parameter3 = +instructions[index+3];
-    switch (code) {
-        case 1:
-            instructions[parameter3] = parameter1 + parameter2;
-            return [4, false];
-        case 2:
-            instructions[parameter3] = parameter1 * parameter2;
-            return [4, false];
-        case 3:
-            instructions[parameter1] = stdin.pop();
-            return [2, false];
-        case 4:
-            outputs.push(parameter1);
-            return [2, false];
-        case 5:
-            if (parameter1 !== 0) {
-                return [parameter2, true];
-            } else {
-                return [3, false];
-            }
-        case 6: 
-            if (parameter1 === 0) {
-                return [parameter2, true];
-            } else {
-                return [3, false];
-            }
-        case 7:
-            if (parameter1 < parameter2) {
-                instructions[parameter3] = 1;
-            } else {
-                instructions[parameter3] = 0;
-            }
-            return [4, false];
-        case 8: 
-            if (parameter1 === parameter2) {
-                instructions[parameter3] = 1;
-            } else {
-                instructions[parameter3] = 0;
-            }
-            return [4, false];
-        case 99:
-            console.log("End program.");
-            return [99, null];
-        default:
-            console.log('Código no válido.');
-            return;
-    }
-}
-
-function Intcode(instructionsInput, initialCode) {
-    const outputs = [];
-    stdin[0] = initialCode;
-
-    for (let i=0; i<instructionsInput.length; i++) {
-        const { optionCode, parameterMode1, parameterMode2, parameterMode3 } = readInstruction(instructionsInput[i]);
-        const [ countToNextOption, isJumpedIndex ] = actionOptionCode(
+    step() {
+        const {
             optionCode,
             parameterMode1,
             parameterMode2,
-            parameterMode3,
-            instructionsInput,
-            i,
-            outputs
-        );
-        
-        if (isJumpedIndex) {
-            i = countToNextOption-1;
-        } else {
-            i += countToNextOption - 1;
-        }
+            parameterMode3
+        } = this.readInstruction();
+        let branched = false;
+        let par1, par2, par3;
 
-        if (countToNextOption === 99) break;
+        switch (optionCode) {
+            case 1:
+                par1 = this.getValueParameter(1, parameterMode1);
+                par2 = this.getValueParameter(2, parameterMode2);
+                par3 = this.getValueParameter(3, parameterMode3);
+                this.program[par3] = par1 + par2;
+                break;
+            case 2:
+                par1 = this.getValueParameter(1, parameterMode1);
+                par2 = this.getValueParameter(2, parameterMode2);
+                par3 = this.getValueParameter(3, parameterMode3);
+                this.program[par3] = par1 * par2;
+                break;
+            case 3:
+                const value = this.stdin[0];
+                this.stdin = this.stdin.slice(1);
+                par1 = this.getValueParameter(1, parameterMode1);
+                this.program[par1] = value;
+                break;
+            case 4: 
+                par1 = this.getValueParameter(1, parameterMode1);
+                this.stdout.push(par1);
+                break;
+            case 5: 
+                par1 = this.getValueParameter(1, parameterMode1);
+                par2 = this.getValueParameter(2, parameterMode2);
+                if (par1 !== 0) {
+                    this.index = par2;
+                    branched = true;
+                }
+                break;
+            case 6:
+                par1 = this.getValueParameter(1, parameterMode1);
+                par2 = this.getValueParameter(2, parameterMode2);
+                if (par1 === 0) {
+                    this.index = par2;
+                    branched = true;
+                }
+                break;
+            case 7:
+                par1 = this.getValueParameter(1, parameterMode1);
+                par2 = this.getValueParameter(2, parameterMode2);
+                par3 = this.getValueParameter(3, parameterMode3);
+                this.program[par3] = par1 < par2 ? 1 : 0;
+                break;
+            case 8:
+                par1 = this.getValueParameter(1, parameterMode1);
+                par2 = this.getValueParameter(2, parameterMode2);
+                par3 = this.getValueParameter(3, parameterMode3);
+                this.program[par3] = par1 === par2 ? 1 : 0;
+                break;
+            default:
+                break;
+        }
+        this.lastOpcode = optionCode;
+        if (!branched) {
+            this.index += Intcode.opcodesSize[optionCode];
+        }
     }
-    return outputs;
+    readInstruction() {
+        const instruction = this.program[this.index];
+        const optionCode = instruction % 100;
+        let parameterMode1 = parseInt(instruction / 100) % 10;
+        let parameterMode2 = parseInt(instruction / 1000) % 10;
+        let parameterMode3 = parseInt(instruction / 10000) % 10;
+
+        const direct1 = Intcode.direct[1].find(el => el === optionCode);
+        if (direct1) {
+            parameterMode1 = 1;
+        }
+        const direct2 = Intcode.direct[2].find(el => el === optionCode);
+        if (direct2) {
+            parameterMode2 = 1;
+        }
+        const direct3 = Intcode.direct[3].find(el => el === optionCode);
+        if (direct3) {
+            parameterMode3 = 1;
+        }
+        return {
+            optionCode,
+            parameterMode1,
+            parameterMode2,
+            parameterMode3
+        };   
+    }
+    getValueParameter(i, mode) {
+        let parameter = this.program[this.index + i];
+        
+        if (mode === 0) {
+            parameter = this.program[parameter];
+        }
+        return parameter;
+    }
+    simulate() {
+        let stop = this.stop();
+        
+        while (!stop) {
+            this.step();
+            stop = this.stop();
+        }
+    }
+    stop() {
+        return this.lastOpcode === 99;
+    }
 }
 
 module.exports = {
